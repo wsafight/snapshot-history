@@ -7,6 +7,14 @@ function simpleCompare<T>(prev: T, next: T) {
   return JSON.stringify(prev) === JSON.stringify(next);
 }
 
+/**
+ * Generate a unique id to ensure that the DOM is not reused when the list is rendered
+ * @param key
+ */
+function generateUid(key: string | number) {
+  return `snapshot-history:${Date.now()}:${key}`;
+}
+
 interface SnapshotHistoryConfig<T> {
   /** 比对函数，目前只提供简单的函数 */
   compareFun: CompareFun<T>;
@@ -19,13 +27,14 @@ interface SnapshotHistoryConfig<T> {
 }
 
 class SnapshotHistory<T> {
-  private gcNumber = 1;
-
+  private uid: number = 1;
   readonly maxSnapshots: number;
   readonly compareFun: CompareFun<T>;
+  readonly withKey: boolean;
   private snapshots: T[] = [];
   private cursor: number = -1;
-  private gc: WeakMap<Object, number> = new WeakMap<Object, number>();
+
+  private keyByObj: WeakMap<Object, string> | null = null;
 
   constructor(config: SnapshotHistoryConfig<T>) {
     const {
@@ -35,13 +44,22 @@ class SnapshotHistory<T> {
     } = config;
     this.maxSnapshots = maxSnapshots;
     this.compareFun = compareFun;
+    this.withKey = withKey;
 
-    if (withKey) {
+    this.initialKeyObj();
+  }
+
+  initialKeyObj(): void {
+    if (this.withKey) {
+      this.keyByObj = new WeakMap<Object, string>();
     }
   }
 
-  keyBy(snapshot: T): number | undefined {
-    return this.gc.get(snapshot);
+  keyBy(snapshot: T): string | undefined {
+    if (!this.withKey) {
+      throw new Error('Please set the configuration item "withKey" to true');
+    }
+    return this.keyByObj!.get(snapshot);
   }
 
   get canUndo(): boolean {
@@ -60,21 +78,26 @@ class SnapshotHistory<T> {
     if (this.checkRepeat(snapshot)) {
       return false;
     }
-
+    // If the current cursor does not point to the last snapshot, discard all subsequent snapshots
     while (this.cursor < this.snapshots.length - 1) {
-      const old: T = this.snapshots.pop() as T;
-      this.gc.delete(old);
+      const next: T = this.snapshots.pop() as T;
+      if (this.withKey) {
+        this.keyByObj!.delete(next);
+      }
     }
 
-    // 生成唯一的 id，确保在列表渲染时不会重用 DOM
-    this.gc.set(snapshot, this.gcNumber++);
+    if (this.withKey) {
+      this.keyByObj!.set(snapshot, generateUid(this.uid++));
+    }
 
     this.snapshots.push(snapshot);
 
-    // 确保历史记录条数限制
+    // Ensure that the number of history records is limited
     if (this.snapshots.length > this.maxSnapshots) {
-      const oldSnapshot: T = this.snapshots.shift() as T;
-      this.gc.delete(oldSnapshot);
+      const prev: T = this.snapshots.shift() as T;
+      if (this.withKey) {
+        this.keyByObj!.delete(prev);
+      }
     }
     this.cursor = this.snapshots.length - 1;
   }
@@ -108,13 +131,13 @@ class SnapshotHistory<T> {
     }
     this.cursor = -1;
     this.snapshots = [];
-    this.gc = new WeakMap<Object, number>();
+    this.initialKeyObj();
   }
 
   checkRepeat(snapshot: T) {
     const next = snapshot;
     const prev = this.cursor >= 0 ? this.snapshots[this.cursor] : {};
-    // 如果更复杂的对象建议使用 deep equal 库
+    // For more complex objects, it is recommended to use the deep equal library or write your own
     return this.compareFun(prev as T, next);
   }
 }
