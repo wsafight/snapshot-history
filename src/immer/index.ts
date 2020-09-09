@@ -1,40 +1,20 @@
-import { CompareFun, SnapshotHistoryConfig } from "./_interface";
-import { generateUid, simpleCompare } from "./util";
+import produce from "immer";
+import {
+  CompareFun,
+  simpleCompare,
+  SnapshotHistoryConfig,
+} from "../_interface";
 
-class SnapshotHistory<T> {
-  private uid: number = 1;
+class ImmutableSnapshotHistory<T> {
   readonly maxSnapshots: number;
   readonly compareFun: CompareFun<T>;
-  readonly withKey: boolean;
   private snapshots: T[] = [];
   private cursor: number = -1;
 
-  private keyByObj: WeakMap<Object, string> | null = null;
-
   constructor(config: SnapshotHistoryConfig<T>) {
-    const {
-      maxSnapshots = 20,
-      compareFun = simpleCompare,
-      withKey = true,
-    } = config;
+    const { maxSnapshots = 20, compareFun = simpleCompare } = config;
     this.maxSnapshots = maxSnapshots;
     this.compareFun = compareFun;
-    this.withKey = withKey;
-
-    this.initialKeyObj();
-  }
-
-  initialKeyObj(): void {
-    if (this.withKey) {
-      this.keyByObj = new WeakMap<Object, string>();
-    }
-  }
-
-  keyBy(snapshot: T): string | undefined {
-    if (!this.withKey) {
-      throw new Error('Please set the configuration item "withKey" to true');
-    }
-    return this.keyByObj!.get(snapshot);
   }
 
   get canUndo(): boolean {
@@ -55,24 +35,20 @@ class SnapshotHistory<T> {
     }
     // If the current cursor does not point to the last snapshot, discard all subsequent snapshots
     while (this.cursor < this.snapshots.length - 1) {
-      const next: T = this.snapshots.pop() as T;
-      if (this.withKey) {
-        this.keyByObj!.delete(next);
-      }
+      this.snapshots.pop();
     }
+    const prev = this.snapshots.length
+      ? this.snapshots[this.snapshots.length - 1]
+      : ({} as T);
+    const newSnapshot = produce(prev, (snapshot) => {
+      snapshot = Object.assign({}, snapshot);
+    });
 
-    if (this.withKey) {
-      this.keyByObj!.set(snapshot, generateUid(this.uid++));
-    }
-
-    this.snapshots.push(snapshot);
+    this.snapshots.push(newSnapshot);
 
     // Ensure that the number of history records is limited
     if (this.snapshots.length > this.maxSnapshots) {
-      const prev: T = this.snapshots.shift() as T;
-      if (this.withKey) {
-        this.keyByObj!.delete(prev);
-      }
+      this.snapshots.shift();
     }
     this.cursor = this.snapshots.length - 1;
   }
@@ -106,7 +82,6 @@ class SnapshotHistory<T> {
     }
     this.cursor = -1;
     this.snapshots = [];
-    this.initialKeyObj();
   }
 
   checkRepeat(snapshot: T) {
@@ -117,4 +92,4 @@ class SnapshotHistory<T> {
   }
 }
 
-export default SnapshotHistory;
+export default ImmutableSnapshotHistory;

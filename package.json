@@ -67,6 +67,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "immer": "^7.0.8"
+  },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^4.5.7",
     "@types/jest": "^26.0.13",

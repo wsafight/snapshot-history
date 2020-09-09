@@ -3,12 +3,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 function simpleCompare(prev, next) {
   return JSON.stringify(prev) === JSON.stringify(next);
 }
+/**
+ * Generate a unique id to ensure that the DOM is not reused when the list is rendered
+ * @param key
+ */
+function generateUid(key) {
+  return `snapshot-history:${Date.now()}:${key}`;
+}
 class SnapshotHistory {
   constructor(config) {
-    this.gcNumber = 1;
+    this.uid = 1;
     this.snapshots = [];
     this.cursor = -1;
-    this.gc = new WeakMap();
+    this.keyByObj = null;
     const {
       maxSnapshots = 20,
       compareFun = simpleCompare,
@@ -16,11 +23,19 @@ class SnapshotHistory {
     } = config;
     this.maxSnapshots = maxSnapshots;
     this.compareFun = compareFun;
-    if (withKey) {
+    this.withKey = withKey;
+    this.initialKeyObj();
+  }
+  initialKeyObj() {
+    if (this.withKey) {
+      this.keyByObj = new WeakMap();
     }
   }
   keyBy(snapshot) {
-    return this.gc.get(snapshot);
+    if (!this.withKey) {
+      throw new Error('Please set the configuration item "withKey" to true');
+    }
+    return this.keyByObj.get(snapshot);
   }
   get canUndo() {
     return this.cursor > 0;
@@ -35,17 +50,23 @@ class SnapshotHistory {
     if (this.checkRepeat(snapshot)) {
       return false;
     }
+    // If the current cursor does not point to the last snapshot, discard all subsequent snapshots
     while (this.cursor < this.snapshots.length - 1) {
-      const old = this.snapshots.pop();
-      this.gc.delete(old);
+      const next = this.snapshots.pop();
+      if (this.withKey) {
+        this.keyByObj.delete(next);
+      }
     }
-    // 生成唯一的 id，确保在列表渲染时不会重用 DOM
-    this.gc.set(snapshot, this.gcNumber++);
+    if (this.withKey) {
+      this.keyByObj.set(snapshot, generateUid(this.uid++));
+    }
     this.snapshots.push(snapshot);
-    // 确保历史记录条数限制
+    // Ensure that the number of history records is limited
     if (this.snapshots.length > this.maxSnapshots) {
-      const oldSnapshot = this.snapshots.shift();
-      this.gc.delete(oldSnapshot);
+      const prev = this.snapshots.shift();
+      if (this.withKey) {
+        this.keyByObj.delete(prev);
+      }
     }
     this.cursor = this.snapshots.length - 1;
   }
@@ -75,12 +96,12 @@ class SnapshotHistory {
     }
     this.cursor = -1;
     this.snapshots = [];
-    this.gc = new WeakMap();
+    this.initialKeyObj();
   }
   checkRepeat(snapshot) {
     const next = snapshot;
     const prev = this.cursor >= 0 ? this.snapshots[this.cursor] : {};
-    // 如果更复杂的对象建议使用 deep equal 库
+    // For more complex objects, it is recommended to use the deep equal library or write your own
     return this.compareFun(prev, next);
   }
 }

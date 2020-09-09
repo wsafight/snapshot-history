@@ -13,14 +13,16 @@ interface SnapshotHistoryConfig<T> {
   storage: "localStorage" | "sessionStorage" | "indexDB";
 }
 declare class SnapshotHistory<T> {
-  private gcNumber;
+  private uid;
   readonly maxSnapshots: number;
   readonly compareFun: CompareFun<T>;
+  readonly withKey: boolean;
   private snapshots;
   private cursor;
-  private gc;
+  private keyByObj;
   constructor(config: SnapshotHistoryConfig<T>);
-  keyBy(snapshot: T): number | undefined;
+  initialKeyObj(): void;
+  keyBy(snapshot: T): string | undefined;
   get canUndo(): boolean;
   get canClear(): boolean;
   get canRedo(): boolean;
